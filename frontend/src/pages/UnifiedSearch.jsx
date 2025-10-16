@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { Search, MapPin, ShoppingBag, TrendingUp, TrendingDown, Minus, Loader } from 'lucide-react'
+import { Search, MapPin, ShoppingBag, MessageSquare, TrendingUp, TrendingDown, Minus, Loader } from 'lucide-react'
 import Statistics from '../components/Statistics'
 import SentimentChart from '../components/SentimentChart'
 import ReviewCard from '../components/ReviewCard'
@@ -17,6 +17,7 @@ function UnifiedSearch() {
   const [allReviews, setAllReviews] = useState([])
   const [googleData, setGoogleData] = useState(null)
   const [amazonData, setAmazonData] = useState(null)
+  const [redditData, setRedditData] = useState(null)
   const [statistics, setStatistics] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
   
@@ -37,14 +38,15 @@ function UnifiedSearch() {
     setAllReviews([])
     setGoogleData(null)
     setAmazonData(null)
-  setStatistics(null)
-  setInsights(null)
-  setInsightsLoading(false)
-  setInsightsError('')
+    setRedditData(null)
+    setStatistics(null)
+    setInsights(null)
+    setInsightsLoading(false)
+    setInsightsError('')
 
     try {
-      // Search both sources in parallel
-      const [googleResponse, amazonResponse] = await Promise.all([
+      // Search all three sources in parallel
+      const [googleResponse, amazonResponse, redditResponse] = await Promise.all([
         // Google Maps search
         axios.post('http://localhost:5000/api/search', {
           query: searchQuery,
@@ -62,15 +64,26 @@ function UnifiedSearch() {
         }).catch(err => {
           console.log('Amazon search failed:', err.message)
           return { error: true, message: err.message }
+        }),
+        
+        // Reddit search
+        axios.post('http://localhost:5000/api/reddit/search', {
+          query: searchQuery,
+          max_reviews: 50
+        }).catch(err => {
+          console.log('Reddit search failed:', err.message)
+          return { error: true, message: err.message }
         })
       ])
       
       console.log('Google response:', googleResponse.error ? 'FAILED' : 'SUCCESS')
       console.log('Amazon response:', amazonResponse.error ? 'FAILED' : 'SUCCESS')
+      console.log('Reddit response:', redditResponse.error ? 'FAILED' : 'SUCCESS')
 
       const combinedReviews = []
       let googleReviews = []
       let amazonReviews = []
+      let redditReviews = []
 
       // Process Google Maps results
       if (!googleResponse.error && googleResponse.data?.results?.length > 0) {
@@ -123,11 +136,30 @@ function UnifiedSearch() {
         console.log('⚠️ No Amazon results found')
       }
 
+      // Process Reddit results
+      if (!redditResponse.error && redditResponse.data?.success) {
+        console.log('Processing Reddit results...')
+        setRedditData({
+          total: redditResponse.data.total,
+          source: 'reddit'
+        })
+
+        redditReviews = redditResponse.data.reviews.map(review => ({
+          ...review,
+          source: 'reddit',
+          rating: 0 // Reddit uses upvotes, not star ratings
+        }))
+        console.log(`✅ Got ${redditReviews.length} Reddit discussions`)
+      } else {
+        console.log('⚠️ No Reddit results found')
+      }
+
       // Combine all reviews
-      combinedReviews.push(...googleReviews, ...amazonReviews)
+      combinedReviews.push(...googleReviews, ...amazonReviews, ...redditReviews)
       console.log(`📊 Total combined reviews: ${combinedReviews.length}`)
       console.log('Google reviews:', googleReviews.length)
       console.log('Amazon reviews:', amazonReviews.length)
+      console.log('Reddit reviews:', redditReviews.length)
       console.log('Combined array:', combinedReviews)
       
       setAllReviews(combinedReviews)
@@ -154,6 +186,7 @@ function UnifiedSearch() {
           total: combinedReviews.length,
           google_count: googleReviews.length,
           amazon_count: amazonReviews.length,
+          reddit_count: redditReviews.length,
           average_rating: avgRating ? avgRating.toFixed(1) : null,
           sentiment: sentimentCounts,
           positive: sentimentCounts.positive || 0,
@@ -233,8 +266,7 @@ function UnifiedSearch() {
   return (
     <div className="unified-search">
       <div className="hero-section">
-        <h1>🔍 Unified Review Search</h1>
-        <p>Search once, get insights from Google Maps AND Amazon</p>
+        <h1>🔍 Brand Sentiment Agent</h1>
         
         <div className="search-box">
           <input
@@ -247,7 +279,7 @@ function UnifiedSearch() {
           />
           <button onClick={handleSearch} disabled={loading}>
             {loading ? <Loader className="spinner" /> : <Search />}
-            {loading ? 'Searching...' : 'Search Both Sources'}
+            {loading ? 'Searching...' : 'Search'}
           </button>
         </div>
 
@@ -258,7 +290,7 @@ function UnifiedSearch() {
         <div className="loading-container">
           <div className="loading-spinner">
             <Loader className="spinner" size={48} />
-            <p>Searching Google Maps and Amazon...</p>
+            <p>Agent is searching...</p>
             <p className="loading-subtext">This may take 30-60 seconds</p>
           </div>
         </div>
@@ -300,6 +332,21 @@ function UnifiedSearch() {
                     <div className="source-stats">
                       <span>⭐ {amazonData.rating}/5</span>
                       <span>• {statistics?.amazon_count || 0} reviews analyzed</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {redditData && (
+                <div className="source-card reddit-card">
+                  <div className="source-icon">
+                    <MessageSquare size={32} />
+                  </div>
+                  <div className="source-info">
+                    <h3>Reddit Discussions</h3>
+                    <p className="source-address">Multiple Subreddits</p>
+                    <div className="source-stats">
+                      <span>💬 {statistics?.reddit_count || 0} discussions analyzed</span>
                     </div>
                   </div>
                 </div>

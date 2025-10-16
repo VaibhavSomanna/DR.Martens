@@ -9,6 +9,7 @@ from openai import OpenAI
 import json
 from scraper import scrape_google_maps_reviews, scrape_from_place_id
 from amazon_scraper import scrape_amazon_reviews
+from reddit_scraper import scrape_reddit_reviews
 
 load_dotenv()
 
@@ -517,6 +518,64 @@ Answer questions based on these reviews. Be specific, cite examples when relevan
     except Exception as e:
         print(f"Error in chat: {e}")
         return jsonify({'error': str(e)}), 500
+
+@app.route('/api/reddit/search', methods=['POST'])
+def reddit_search():
+    """Search Reddit for product/place discussions"""
+    try:
+        data = request.json
+        query = data.get('query', '')
+        max_reviews = data.get('max_reviews', 50)
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        print(f"🔍 Reddit search for: {query}")
+        
+        # Scrape Reddit reviews
+        reviews = scrape_reddit_reviews(query, max_reviews=max_reviews)
+        
+        if not reviews:
+            return jsonify({
+                'success': False,
+                'error': 'No Reddit discussions found',
+                'reviews': []
+            }), 200
+        
+        # Analyze sentiment for each review using AI
+        analyzed_reviews = []
+        for review in reviews:
+            sentiment_result = analyze_sentiment(review.get('text', ''))
+            analyzed_reviews.append({
+                'author': review.get('author'),
+                'text': review.get('text'),
+                'title': review.get('title'),
+                'date': review.get('date'),
+                'score': review.get('score'),
+                'url': review.get('url'),
+                'subreddit': review.get('subreddit'),
+                'type': review.get('type'),
+                'sentiment': sentiment_result['sentiment'],
+                'polarity': sentiment_result['polarity'],
+                'subjectivity': sentiment_result.get('subjectivity', 0.5)
+            })
+        
+        return jsonify({
+            'success': True,
+            'reviews': analyzed_reviews,
+            'total': len(analyzed_reviews),
+            'source': 'reddit'
+        })
+        
+    except Exception as e:
+        print(f"❌ Reddit search error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'reviews': []
+        }), 200
 
 @app.route('/api/generate-report', methods=['POST'])
 def generate_report():

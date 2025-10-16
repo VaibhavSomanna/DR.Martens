@@ -1,5 +1,5 @@
 import React from 'react'
-import { MapPin, ShoppingBag, CheckCircle } from 'lucide-react'
+import { MapPin, ShoppingBag, MessageSquare, CheckCircle } from 'lucide-react'
 import './ReviewCard.css'
 
 function ReviewCard({ review, showSource = false, showVerified = false }) {
@@ -45,6 +45,8 @@ function ReviewCard({ review, showSource = false, showVerified = false }) {
             <span className={`source-badge source-${review.source}`}>
               {review.source === 'google_maps' ? (
                 <><MapPin size={14} /> Google Maps</>
+              ) : review.source === 'reddit' ? (
+                <><MessageSquare size={14} /> r/{review.subreddit}</>
               ) : (
                 <><ShoppingBag size={14} /> Amazon</>
               )}
@@ -57,7 +59,9 @@ function ReviewCard({ review, showSource = false, showVerified = false }) {
           )}
         </div>
         <div className="review-rating">
-          {renderStars(review.rating)}
+          {review.rating > 0 ? renderStars(review.rating) : review.score !== undefined && (
+            <span className="reddit-score">⬆️ {review.score} upvotes</span>
+          )}
         </div>
       </div>
 

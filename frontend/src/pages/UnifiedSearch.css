@@ -163,6 +163,17 @@
   color: #ff9900;
 }
 
+.source-card.reddit-card {
+  border-color: #ff4500;
+  background: linear-gradient(135deg, #ff4500 0%, #ff6a33 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.source-card.reddit-card .source-icon {
+  color: #ff4500;
+}
+
 .source-icon {
   flex-shrink: 0;
 }

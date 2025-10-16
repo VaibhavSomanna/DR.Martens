@@ -59,6 +59,17 @@
   color: #f57c00;
 }
 
+.source-reddit {
+  background: #ffe5e0;
+  color: #ff4500;
+}
+
+.reddit-score {
+  font-size: 0.9rem;
+  color: #ff4500;
+  font-weight: 600;
+}
+
 .verified-badge {
   display: inline-flex;
   align-items: center;
