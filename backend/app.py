@@ -7,18 +7,18 @@ from textblob import TextBlob
 from datetime import datetime
 from openai import OpenAI
 import json
-from scraper import scrape_google_maps_reviews, scrape_from_place_id
 from amazon_scraper import scrape_amazon_reviews
 from reddit_scraper import scrape_reddit_reviews
+from youtube_scraper import scrape_youtube_reviews
+from trustpilot_scraper import scrape_trustpilot_reviews
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
-GOOGLE_API_KEY = os.getenv('GOOGLE_API_KEY')
+YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
-GOOGLE_PLACES_API_URL = "https://maps.googleapis.com/maps/api/place"
 
 # Initialize OpenAI client
 client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
@@ -148,51 +148,6 @@ def analyze_sentiment(text, rating=None, use_ai=True):
             "method": "error"
         }
 
-def search_place(query):
-    """Search for a place using Google Places API"""
-    url = f"{GOOGLE_PLACES_API_URL}/findplacefromtext/json"
-    params = {
-        'input': query,
-        'inputtype': 'textquery',
-        'fields': 'place_id,name,formatted_address,rating',
-        'key': GOOGLE_API_KEY
-    }
-    
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        print(f"Google API Response: {data}")  # Debug logging
-        
-        if data.get('candidates'):
-            return data['candidates'][0]
-        return None
-    except Exception as e:
-        print(f"Error searching place: {e}")
-        return None
-
-def get_place_reviews(place_id):
-    """Get reviews for a place using Google Places API"""
-    url = f"{GOOGLE_PLACES_API_URL}/details/json"
-    params = {
-        'place_id': place_id,
-        'fields': 'name,rating,reviews,user_ratings_total,formatted_address',
-        'key': GOOGLE_API_KEY
-    }
-    
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status()
-        data = response.json()
-        
-        if data.get('result'):
-            return data['result']
-        return None
-    except Exception as e:
-        print(f"Error getting place reviews: {e}")
-        return None
-
 @app.route('/api/health', methods=['GET'])
 def health_check():
     """Health check endpoint"""
@@ -201,150 +156,123 @@ def health_check():
         "timestamp": datetime.now().isoformat()
     })
 
+@app.route('/api/youtube/search', methods=['POST'])
+def search_youtube():
+    """Search YouTube for product review videos and extract comments"""
+    try:
+        data = request.json
+        query = data.get('query', '')
+        max_reviews = data.get('max_reviews', 50)
+        
+        if not query:
+            return jsonify({'error': 'Query is required'}), 400
+        
+        print(f"🎥 YouTube search for: {query}")
+        
+        reviews = scrape_youtube_reviews(query, max_reviews=max_reviews)
+        
+        if not reviews:
+            return jsonify({
+                'success': True,
+                'reviews': [],
+                'total': 0,
+                'source': 'youtube',
+                'error': 'No YouTube reviews found'
+            })
+        
+        # Analyze sentiment for each review
+        analyzed_reviews = []
+        for review in reviews:
+            sentiment_data = analyze_sentiment(review.get('text', ''))
+            review['sentiment'] = sentiment_data
+            analyzed_reviews.append(review)
+        
+        return jsonify({
+            'success': True,
+            'reviews': analyzed_reviews,
+            'total': len(analyzed_reviews),
+            'source': 'youtube'
+        })
+        
+    except Exception as e:
+        print(f"Error in YouTube search: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': True,
+            'reviews': [],
+            'total': 0,
+            'source': 'youtube',
+            'error': str(e)
+        })
+
+@app.route('/api/trustpilot/search', methods=['POST'])
+def search_trustpilot():
+    """Search Trustpilot for product reviews"""
+    try:
+        data = request.json
+        query = data.get('query', 'Dr Martens')
+        max_reviews = data.get('max_reviews', 50)
+        
+        print(f"🔍 Trustpilot search for: {query}")
+        
+        reviews = scrape_trustpilot_reviews(query, max_reviews=max_reviews)
+        
+        if not reviews:
+            return jsonify({
+                'success': True,
+                'reviews': [],
+                'total': 0,
+                'source': 'trustpilot',
+                'error': 'No Trustpilot reviews found'
+            })
+        
+        # Analyze sentiment for each review
+        analyzed_reviews = []
+        for review in reviews:
+            sentiment_data = analyze_sentiment(review.get('text', ''), rating=review.get('rating'))
+            review['sentiment'] = sentiment_data
+            analyzed_reviews.append(review)
+        
+        return jsonify({
+            'success': True,
+            'reviews': analyzed_reviews,
+            'total': len(analyzed_reviews),
+            'source': 'trustpilot'
+        })
+        
+    except Exception as e:
+        print(f"Error in Trustpilot search: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': True,
+            'reviews': [],
+            'total': 0,
+            'source': 'trustpilot',
+            'error': str(e)
+        })
+
 @app.route('/api/search', methods=['POST'])
 def search():
-    """Search for Dr. Martens stores"""
-    data = request.get_json()
-    query = data.get('query', 'Dr. Martens')
-    
-    if not GOOGLE_API_KEY:
-        return jsonify({
-            "error": "Google API key not configured"
-        }), 500
-    
-    place = search_place(query)
-    
-    if place:
-        # Return in the format frontend expects: { results: [...] }
-        return jsonify({
-            "success": True,
-            "results": [place]  # Frontend expects results array
-        })
-    else:
-        return jsonify({
-            "success": False,
-            "error": "No place found",
-            "results": []  # Return empty array instead of 404
-        }), 200  # Return 200 instead of 404 so frontend doesn't error
+    """Deprecated - kept for backwards compatibility"""
+    return jsonify({
+        "success": False,
+        "error": "Google Places API has been removed. Use YouTube or Trustpilot endpoints instead.",
+        "alternatives": [
+            "/api/youtube/search",
+            "/api/trustpilot/search",
+            "/api/amazon/search",
+            "/api/reddit/search"
+        ]
+    }), 400
 
 @app.route('/api/reviews', methods=['POST'])
 def get_reviews():
-    """Get and analyze reviews for a place - Enhanced with scraping"""
-    data = request.get_json()
-    place_id = data.get('place_id')
-    use_scraper = data.get('use_scraper', True)  # Default to scraping for more reviews
-    max_reviews = data.get('max_reviews', 50)  # Default to 50 reviews
-    
-    if not place_id:
-        return jsonify({
-            "error": "place_id is required"
-        }), 400
-    
-    if not GOOGLE_API_KEY:
-        return jsonify({
-            "error": "Google API key not configured"
-        }), 500
-    
-    # First, get place details from Google Places API
-    place_data = get_place_reviews(place_id)
-    
-    if not place_data:
-        return jsonify({
-            "error": "Could not fetch place details"
-        }), 404
-    
-    place_name = place_data.get('name', 'Dr. Martens')
-    place_address = place_data.get('formatted_address', '')
-    
-    analyzed_reviews = []
-    data_source = "google_places_api"
-    
-    if use_scraper:
-        # Use Selenium scraper for more reviews
-        print(f"\n🕷️ Scraping reviews for: {place_name}")
-        print(f"   Target: {max_reviews} reviews")
-        
-        try:
-            # Try scraping from place_id first
-            scraped_reviews = scrape_from_place_id(place_id, max_reviews=max_reviews)
-            
-            # If that fails, try with place name
-            if not scraped_reviews:
-                print("   Trying with place name...")
-                scraped_reviews = scrape_google_maps_reviews(place_name, location="", max_reviews=max_reviews)
-            
-            if scraped_reviews:
-                print(f"✅ Scraped {len(scraped_reviews)} reviews successfully")
-                data_source = "web_scraping"
-                
-                # Analyze sentiment for scraped reviews (pass rating for better accuracy)
-                for review in scraped_reviews:
-                    rating = review.get('rating', 0)
-                    sentiment_data = analyze_sentiment(review.get('text', ''), rating=rating)
-                    analyzed_reviews.append({
-                        "author": review.get('author', 'Anonymous'),
-                        "rating": rating,
-                        "text": review.get('text', ''),
-                        "time": review.get('date', 'Unknown'),
-                        "sentiment": sentiment_data
-                    })
-            else:
-                print("⚠️ Scraping failed, falling back to Google Places API")
-                use_scraper = False
-        except Exception as e:
-            print(f"❌ Scraping error: {e}")
-            print("   Falling back to Google Places API")
-            use_scraper = False
-    
-    # Fall back to Google Places API if scraping is disabled or failed
-    if not use_scraper or not analyzed_reviews:
-        print(f"📍 Using Google Places API (limited to 5 reviews)")
-        reviews = place_data.get('reviews', [])
-        data_source = "google_places_api"
-        
-        for review in reviews:
-            rating = review.get('rating', 0)
-            sentiment_data = analyze_sentiment(review.get('text', ''), rating=rating)
-            analyzed_reviews.append({
-                "author": review.get('author_name'),
-                "rating": rating,
-                "text": review.get('text'),
-                "time": review.get('relative_time_description'),
-                "sentiment": sentiment_data
-            })
-    
-    # Calculate overall statistics
-    total_reviews = len(analyzed_reviews)
-    positive_count = sum(1 for r in analyzed_reviews if r['sentiment']['sentiment'] == 'positive')
-    negative_count = sum(1 for r in analyzed_reviews if r['sentiment']['sentiment'] == 'negative')
-    neutral_count = sum(1 for r in analyzed_reviews if r['sentiment']['sentiment'] == 'neutral')
-    
-    avg_rating = place_data.get('rating', 0)
-    if analyzed_reviews:
-        avg_polarity = sum(r['sentiment']['polarity'] for r in analyzed_reviews) / total_reviews
-    else:
-        avg_polarity = 0
-    
+    """Deprecated - Google Places API removed"""
     return jsonify({
-        "success": True,
-        "place": {
-            "name": place_name,
-            "address": place_address,
-            "rating": avg_rating,
-            "total_ratings": place_data.get('user_ratings_total')
-        },
-        "reviews": analyzed_reviews,
-        "statistics": {
-            "total": total_reviews,
-            "positive": positive_count,
-            "negative": negative_count,
-            "neutral": neutral_count,
-            "avg_rating": avg_rating,
-            "avg_polarity": round(avg_polarity, 2)
-        },
-        "data_source": data_source,
-        "scraping_enabled": use_scraper
-    })
+        "error": "Google Places API has been removed. Use /api/youtube/search or /api/trustpilot/search instead."
+    }), 400
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
@@ -624,111 +552,119 @@ Use markdown formatting for structure. Make it suitable for presentation to exec
 @app.route('/api/combined-analysis', methods=['POST'])
 def combined_analysis():
     """
-    Get reviews from both Google Maps (location) and Amazon (product)
+    Get reviews from all sources: YouTube, Amazon, Reddit, and Trustpilot
     Returns separate review lists but combined AI insights
     """
     try:
         data = request.get_json()
-        google_query = data.get('google_query', '')
-        amazon_query = data.get('amazon_query', '')
+        query = data.get('query', '')
         max_reviews = data.get('max_reviews', 30)
         
-        if not google_query and not amazon_query:
+        if not query:
             return jsonify({
-                'error': 'At least one query (Google or Amazon) is required'
+                'error': 'Query is required'
             }), 400
         
-        google_reviews = []
+        youtube_reviews = []
         amazon_reviews = []
-        google_place_info = None
-        amazon_product_info = None
+        reddit_reviews = []
+        trustpilot_reviews = []
         
-        # Fetch Google Maps reviews
-        if google_query:
-            print(f"🗺️ Fetching Google Maps reviews for: {google_query}")
+        # Fetch YouTube reviews
+        try:
+            print(f"🎥 Fetching YouTube reviews for: {query}")
+            youtube_data = scrape_youtube_reviews(query, max_reviews=max_reviews)
             
-            # Search for place
-            place = search_place(google_query)
-            if place:
-                place_id = place.get('place_id')
-                google_place_info = {
-                    'name': place.get('name'),
-                    'address': place.get('formatted_address'),
-                    'rating': place.get('rating')
-                }
-                
-                # Get place details
-                place_data = get_place_reviews(place_id)
-                if place_data:
-                    google_place_info['rating'] = place_data.get('rating')
-                    google_place_info['total_ratings'] = place_data.get('user_ratings_total')
-                    
-                    # Try scraping first
-                    try:
-                        scraped_reviews = scrape_from_place_id(place_id, max_reviews=max_reviews)
-                        if scraped_reviews:
-                            for review in scraped_reviews:
-                                rating = review.get('rating', 0)
-                                sentiment_data = analyze_sentiment(review.get('text', ''), rating=rating)
-                                google_reviews.append({
-                                    'author': review.get('author', 'Anonymous'),
-                                    'rating': rating,
-                                    'text': review.get('text', ''),
-                                    'date': review.get('date', 'Unknown'),
-                                    'sentiment': sentiment_data['sentiment'],
-                                    'polarity': sentiment_data['polarity'],
-                                    'subjectivity': sentiment_data['subjectivity'],
-                                    'source': 'google_maps'
-                                })
-                    except Exception as e:
-                        print(f"⚠️ Scraping failed, using API: {e}")
-                        # Fallback to API
-                        for review in place_data.get('reviews', []):
-                            rating = review.get('rating', 0)
-                            sentiment_data = analyze_sentiment(review.get('text', ''), rating=rating)
-                            google_reviews.append({
-                                'author': review.get('author_name'),
-                                'rating': rating,
-                                'text': review.get('text'),
-                                'date': review.get('relative_time_description'),
-                                'sentiment': sentiment_data['sentiment'],
-                                'polarity': sentiment_data['polarity'],
-                                'subjectivity': sentiment_data['subjectivity'],
-                                'source': 'google_maps'
-                            })
+            for review in youtube_data:
+                sentiment_data = analyze_sentiment(review.get('text', ''))
+                youtube_reviews.append({
+                    'author': review.get('author', 'Anonymous'),
+                    'text': review.get('text', ''),
+                    'date': review.get('date', 'Unknown'),
+                    'likes': review.get('likes', 0),
+                    'video_title': review.get('video_title', ''),
+                    'video_url': review.get('video_url', ''),
+                    'sentiment': sentiment_data['sentiment'],
+                    'polarity': sentiment_data['polarity'],
+                    'subjectivity': sentiment_data['subjectivity'],
+                    'source': 'youtube'
+                })
+        except Exception as e:
+            print(f"⚠️ YouTube fetching failed: {e}")
         
         # Fetch Amazon reviews
-        if amazon_query:
-            print(f"🛒 Fetching Amazon reviews for: {amazon_query}")
+        try:
+            print(f"🛒 Fetching Amazon reviews for: {query}")
+            product_info, reviews = scrape_amazon_reviews(query, max_reviews=max_reviews)
             
-            try:
-                product_info, reviews = scrape_amazon_reviews(amazon_query, max_reviews=max_reviews)
-                amazon_product_info = product_info
-                
-                for review in reviews:
-                    rating = review.get('rating')
-                    sentiment_data = analyze_sentiment(review.get('text', ''))
-                    amazon_reviews.append({
-                        'author': review.get('author', 'Anonymous'),
-                        'rating': rating or 0,
-                        'title': review.get('title', ''),
-                        'text': review.get('text', ''),
-                        'date': review.get('date', 'Unknown'),
-                        'verified': review.get('verified', False),
-                        'sentiment': sentiment_data['sentiment'],
-                        'polarity': sentiment_data['polarity'],
-                        'subjectivity': sentiment_data['subjectivity'],
-                        'source': 'amazon'
-                    })
-            except Exception as e:
-                print(f"⚠️ Amazon scraping failed: {e}")
+            for review in reviews:
+                rating = review.get('rating')
+                sentiment_data = analyze_sentiment(review.get('text', ''), rating=rating)
+                amazon_reviews.append({
+                    'author': review.get('author', 'Anonymous'),
+                    'rating': rating or 0,
+                    'title': review.get('title', ''),
+                    'text': review.get('text', ''),
+                    'date': review.get('date', 'Unknown'),
+                    'verified': review.get('verified', False),
+                    'sentiment': sentiment_data['sentiment'],
+                    'polarity': sentiment_data['polarity'],
+                    'subjectivity': sentiment_data['subjectivity'],
+                    'source': 'amazon'
+                })
+        except Exception as e:
+            print(f"⚠️ Amazon scraping failed: {e}")
+        
+        # Fetch Reddit reviews
+        try:
+            print(f"📱 Fetching Reddit reviews for: {query}")
+            reddit_data = scrape_reddit_reviews(query, max_posts=max_reviews)
+            
+            for post in reddit_data:
+                sentiment_data = analyze_sentiment(post.get('text', ''))
+                reddit_reviews.append({
+                    'author': post.get('author', 'Anonymous'),
+                    'title': post.get('title', ''),
+                    'text': post.get('text', ''),
+                    'score': post.get('score', 0),
+                    'subreddit': post.get('subreddit', ''),
+                    'date': post.get('date', 'Unknown'),
+                    'sentiment': sentiment_data['sentiment'],
+                    'polarity': sentiment_data['polarity'],
+                    'subjectivity': sentiment_data['subjectivity'],
+                    'source': 'reddit'
+                })
+        except Exception as e:
+            print(f"⚠️ Reddit fetching failed: {e}")
+        
+        # Fetch Trustpilot reviews
+        try:
+            print(f"� Fetching Trustpilot reviews for: {query}")
+            trustpilot_data = scrape_trustpilot_reviews(query, max_reviews=max_reviews)
+            
+            for review in trustpilot_data:
+                sentiment_data = analyze_sentiment(review.get('text', ''), rating=review.get('rating'))
+                trustpilot_reviews.append({
+                    'author': review.get('author', 'Anonymous'),
+                    'rating': review.get('rating', 0),
+                    'title': review.get('title', ''),
+                    'text': review.get('text', ''),
+                    'date': review.get('date', 'Unknown'),
+                    'verified': review.get('verified', False),
+                    'sentiment': sentiment_data['sentiment'],
+                    'polarity': sentiment_data['polarity'],
+                    'subjectivity': sentiment_data['subjectivity'],
+                    'source': 'trustpilot'
+                })
+        except Exception as e:
+            print(f"⚠️ Trustpilot fetching failed: {e}")
         
         # Combine all reviews for overall statistics
-        all_reviews = google_reviews + amazon_reviews
+        all_reviews = youtube_reviews + amazon_reviews + reddit_reviews + trustpilot_reviews
         
         if not all_reviews:
             return jsonify({
-                'error': 'No reviews found from either source'
+                'error': 'No reviews found from any source'
             }), 404
         
         # Calculate combined statistics
@@ -742,14 +678,16 @@ def combined_analysis():
             sentiment_counts[review['sentiment']] += 1
             total_polarity += review['polarity']
             total_subjectivity += review['subjectivity']
-            if review['rating'] > 0:
+            if review.get('rating', 0) > 0:
                 total_rating += review['rating']
                 rating_count += 1
         
         statistics = {
             'total_reviews': len(all_reviews),
-            'google_reviews_count': len(google_reviews),
+            'youtube_reviews_count': len(youtube_reviews),
             'amazon_reviews_count': len(amazon_reviews),
+            'reddit_reviews_count': len(reddit_reviews),
+            'trustpilot_reviews_count': len(trustpilot_reviews),
             'sentiment_distribution': sentiment_counts,
             'average_polarity': round(total_polarity / len(all_reviews), 2),
             'average_subjectivity': round(total_subjectivity / len(all_reviews), 2),
@@ -758,15 +696,21 @@ def combined_analysis():
         
         return jsonify({
             'success': True,
-            'google': {
-                'place_info': google_place_info,
-                'reviews': google_reviews,
-                'count': len(google_reviews)
+            'youtube': {
+                'reviews': youtube_reviews,
+                'count': len(youtube_reviews)
             },
             'amazon': {
-                'product_info': amazon_product_info,
                 'reviews': amazon_reviews,
                 'count': len(amazon_reviews)
+            },
+            'reddit': {
+                'reviews': reddit_reviews,
+                'count': len(reddit_reviews)
+            },
+            'trustpilot': {
+                'reviews': trustpilot_reviews,
+                'count': len(trustpilot_reviews)
             },
             'combined_statistics': statistics,
             'all_reviews': all_reviews  # For AI insights
@@ -796,24 +740,12 @@ def amazon_search():
         product_info = None
         reviews = []
         
-        if not use_demo:
-            try:
-                # Scrape Amazon reviews
-                product_info, reviews = scrape_amazon_reviews(product_query, max_reviews=max_reviews)
-            except Exception as scrape_error:
-                error_msg = str(scrape_error)
-                if "login" in error_msg.lower() or "blocked" in error_msg.lower():
-                    print("⚠️ Amazon blocked scraping, using demo data as fallback...")
-                    use_demo = True
-                else:
-                    raise
-        
-        # Use demo data if requested or if scraping failed
-        if use_demo or not reviews:
-            from amazon_demo_data import generate_demo_reviews, generate_demo_product_info
-            print("📊 Using demo data for demonstration...")
-            product_info = generate_demo_product_info(product_query)
-            reviews = generate_demo_reviews(product_query, count=max_reviews)
+        try:
+            product_info, reviews = scrape_amazon_reviews(product_query, max_reviews=max_reviews)
+            print(f"✅ Found {len(reviews)} Amazon reviews")
+        except Exception as scrape_error:
+            print(f"⚠️ Amazon scraping error: {scrape_error}")
+            reviews = []
         
         if not reviews:
             return jsonify({

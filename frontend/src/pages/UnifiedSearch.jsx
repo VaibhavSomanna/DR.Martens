@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { Search, MapPin, ShoppingBag, MessageSquare, TrendingUp, TrendingDown, Minus, Loader } from 'lucide-react'
+import { Search, ShoppingBag, MessageSquare, TrendingUp, TrendingDown, Minus, Loader } from 'lucide-react'
 import Statistics from '../components/Statistics'
 import SentimentChart from '../components/SentimentChart'
 import ReviewCard from '../components/ReviewCard'
@@ -15,9 +15,10 @@ function UnifiedSearch() {
   
   // Combined data
   const [allReviews, setAllReviews] = useState([])
-  const [googleData, setGoogleData] = useState(null)
+  const [youtubeData, setYoutubeData] = useState(null)
   const [amazonData, setAmazonData] = useState(null)
   const [redditData, setRedditData] = useState(null)
+  const [trustpilotData, setTrustpilotData] = useState(null)
   const [statistics, setStatistics] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
   
@@ -36,23 +37,24 @@ function UnifiedSearch() {
     setLoading(true)
     setError('')
     setAllReviews([])
-    setGoogleData(null)
+    setYoutubeData(null)
     setAmazonData(null)
     setRedditData(null)
+    setTrustpilotData(null)
     setStatistics(null)
     setInsights(null)
     setInsightsLoading(false)
     setInsightsError('')
 
     try {
-      // Search all three sources in parallel
-      const [googleResponse, amazonResponse, redditResponse] = await Promise.all([
-        // Google Maps search
-        axios.post('http://localhost:5000/api/search', {
+      // Search all four sources in parallel
+      const [youtubeResponse, amazonResponse, redditResponse, trustpilotResponse] = await Promise.all([
+        // YouTube search
+        axios.post('http://localhost:5000/api/youtube/search', {
           query: searchQuery,
-          use_scraping: true
+          max_reviews: 50
         }).catch(err => {
-          console.log('Google search failed:', err.message)
+          console.log('YouTube search failed:', err.message)
           return { error: true, message: err.message }
         }),
         
@@ -73,48 +75,44 @@ function UnifiedSearch() {
         }).catch(err => {
           console.log('Reddit search failed:', err.message)
           return { error: true, message: err.message }
+        }),
+        
+        // Trustpilot search
+        axios.post('http://localhost:5000/api/trustpilot/search', {
+          query: searchQuery,
+          max_reviews: 50
+        }).catch(err => {
+          console.log('Trustpilot search failed:', err.message)
+          return { error: true, message: err.message }
         })
       ])
       
-      console.log('Google response:', googleResponse.error ? 'FAILED' : 'SUCCESS')
+      console.log('YouTube response:', youtubeResponse.error ? 'FAILED' : 'SUCCESS')
       console.log('Amazon response:', amazonResponse.error ? 'FAILED' : 'SUCCESS')
       console.log('Reddit response:', redditResponse.error ? 'FAILED' : 'SUCCESS')
+      console.log('Trustpilot response:', trustpilotResponse.error ? 'FAILED' : 'SUCCESS')
 
       const combinedReviews = []
-      let googleReviews = []
+      let youtubeReviews = []
       let amazonReviews = []
       let redditReviews = []
+      let trustpilotReviews = []
 
-      // Process Google Maps results
-      if (!googleResponse.error && googleResponse.data?.results?.length > 0) {
-        console.log('Processing Google Maps results...')
-        const place = googleResponse.data.results[0]
-        setGoogleData({
-          name: place.name,
-          address: place.formatted_address,
-          rating: place.rating,
-          total_reviews: place.user_ratings_total
+      // Process YouTube results
+      if (!youtubeResponse.error && youtubeResponse.data?.success) {
+        console.log('Processing YouTube results...')
+        setYoutubeData({
+          total: youtubeResponse.data.total,
+          source: 'youtube'
         })
 
-        // Fetch Google reviews
-        try {
-          const reviewsResponse = await axios.post('http://localhost:5000/api/reviews', {
-            place_id: place.place_id,
-            use_scraping: true
-          })
-          
-          if (reviewsResponse.data?.reviews) {
-            googleReviews = reviewsResponse.data.reviews.map(review => ({
-              ...review,
-              source: 'google_maps'
-            }))
-            console.log(`✅ Got ${googleReviews.length} Google reviews`)
-          }
-        } catch (err) {
-          console.error('Error fetching Google reviews:', err)
-        }
+        youtubeReviews = youtubeResponse.data.reviews.map(review => ({
+          ...review,
+          source: 'youtube'
+        }))
+        console.log(`✅ Got ${youtubeReviews.length} YouTube reviews`)
       } else {
-        console.log('⚠️ No Google Maps results found')
+        console.log('⚠️ No YouTube results found')
       }
 
       // Process Amazon results
@@ -154,12 +152,30 @@ function UnifiedSearch() {
         console.log('⚠️ No Reddit results found')
       }
 
+      // Process Trustpilot results
+      if (!trustpilotResponse.error && trustpilotResponse.data?.success) {
+        console.log('Processing Trustpilot results...')
+        setTrustpilotData({
+          total: trustpilotResponse.data.total,
+          source: 'trustpilot'
+        })
+
+        trustpilotReviews = trustpilotResponse.data.reviews.map(review => ({
+          ...review,
+          source: 'trustpilot'
+        }))
+        console.log(`✅ Got ${trustpilotReviews.length} Trustpilot reviews`)
+      } else {
+        console.log('⚠️ No Trustpilot results found')
+      }
+
       // Combine all reviews
-      combinedReviews.push(...googleReviews, ...amazonReviews, ...redditReviews)
+      combinedReviews.push(...youtubeReviews, ...amazonReviews, ...redditReviews, ...trustpilotReviews)
       console.log(`📊 Total combined reviews: ${combinedReviews.length}`)
-      console.log('Google reviews:', googleReviews.length)
+      console.log('YouTube reviews:', youtubeReviews.length)
       console.log('Amazon reviews:', amazonReviews.length)
       console.log('Reddit reviews:', redditReviews.length)
+      console.log('Trustpilot reviews:', trustpilotReviews.length)
       console.log('Combined array:', combinedReviews)
       
       setAllReviews(combinedReviews)
@@ -184,9 +200,10 @@ function UnifiedSearch() {
 
         setStatistics({
           total: combinedReviews.length,
-          google_count: googleReviews.length,
+          youtube_count: youtubeReviews.length,
           amazon_count: amazonReviews.length,
           reddit_count: redditReviews.length,
+          trustpilot_count: trustpilotReviews.length,
           average_rating: avgRating ? avgRating.toFixed(1) : null,
           sentiment: sentimentCounts,
           positive: sentimentCounts.positive || 0,
@@ -303,17 +320,16 @@ function UnifiedSearch() {
           <div className="source-summary">
             <h2>📊 Search Results</h2>
             <div className="source-cards">
-              {googleData && (
-                <div className="source-card google-card">
+              {youtubeData && (
+                <div className="source-card youtube-card">
                   <div className="source-icon">
-                    <MapPin size={32} />
+                    🎥
                   </div>
                   <div className="source-info">
-                    <h3>{googleData.name}</h3>
-                    <p className="source-address">{googleData.address}</p>
+                    <h3>YouTube Reviews</h3>
+                    <p className="source-address">Video Comments & Reviews</p>
                     <div className="source-stats">
-                      <span>⭐ {googleData.rating}/5</span>
-                      <span>• {statistics?.google_count || 0} reviews analyzed</span>
+                      <span>💬 {statistics?.youtube_count || 0} comments analyzed</span>
                     </div>
                   </div>
                 </div>
@@ -347,6 +363,21 @@ function UnifiedSearch() {
                     <p className="source-address">Multiple Subreddits</p>
                     <div className="source-stats">
                       <span>💬 {statistics?.reddit_count || 0} discussions analyzed</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {trustpilotData && (
+                <div className="source-card trustpilot-card">
+                  <div className="source-icon">
+                    ⭐
+                  </div>
+                  <div className="source-info">
+                    <h3>Trustpilot Reviews</h3>
+                    <p className="source-address">Verified Customer Reviews</p>
+                    <div className="source-stats">
+                      <span>✓ {statistics?.trustpilot_count || 0} verified reviews</span>
                     </div>
                   </div>
                 </div>

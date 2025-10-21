@@ -175,13 +175,13 @@
   border-color: #ffed4e;
 }
 
-.source-card.google-card {
+.source-card.youtube-card {
   border-color: #FFF200;
   background: #0a0a0a;
 }
 
-.source-card.google-card .source-icon {
-  color: #FFF200;
+.source-card.youtube-card .source-icon {
+  font-size: 32px;
 }
 
 .source-card.amazon-card {
@@ -200,6 +200,15 @@
 
 .source-card.reddit-card .source-icon {
   color: #FFF200;
+}
+
+.source-card.trustpilot-card {
+  border-color: #FFF200;
+  background: #0a0a0a;
+}
+
+.source-card.trustpilot-card .source-icon {
+  font-size: 32px;
 }
 
 .source-icon {

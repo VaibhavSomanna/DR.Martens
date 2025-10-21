@@ -1,5 +1,5 @@
 import React from 'react'
-import { MapPin, ShoppingBag, MessageSquare, CheckCircle } from 'lucide-react'
+import { ShoppingBag, MessageSquare, CheckCircle, Video, Star } from 'lucide-react'
 import './ReviewCard.css'
 
 function ReviewCard({ review, showSource = false, showVerified = false }) {
@@ -43,10 +43,12 @@ function ReviewCard({ review, showSource = false, showVerified = false }) {
           <span className="review-time">{reviewTime}</span>
           {showSource && review.source && (
             <span className={`source-badge source-${review.source}`}>
-              {review.source === 'google_maps' ? (
-                <><MapPin size={14} /> Google Maps</>
+              {review.source === 'youtube' ? (
+                <><Video size={14} /> YouTube</>
               ) : review.source === 'reddit' ? (
                 <><MessageSquare size={14} /> r/{review.subreddit}</>
+              ) : review.source === 'trustpilot' ? (
+                <><Star size={14} /> Trustpilot</>
               ) : (
                 <><ShoppingBag size={14} /> Amazon</>
               )}
@@ -68,6 +70,12 @@ function ReviewCard({ review, showSource = false, showVerified = false }) {
       {review.title && (
         <div className="review-title">
           {review.title}
+        </div>
+      )}
+
+      {review.source === 'youtube' && review.video_title && (
+        <div className="video-info">
+          🎬 From: <a href={review.video_url} target="_blank" rel="noopener noreferrer">{review.video_title}</a>
         </div>
       )}
 
