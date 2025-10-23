@@ -75,12 +75,6 @@ function Statistics({ statistics }) {
           </div>
         </div>
 
-        <div className="stat-card rating">
-          <div className="stat-icon">⭐</div>
-          <div className="stat-value">{averageRating}</div>
-          <div className="stat-label">Average Rating</div>
-        </div>
-
         <div className="stat-card polarity">
           <div className="stat-icon">📈</div>
           <div className="stat-value">{avgPolarity}</div>

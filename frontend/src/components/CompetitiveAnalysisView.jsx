@@ -24,26 +24,16 @@ const CompetitiveAnalysisView = ({ data }) => {
         </div>
       </div>
       
-      {/* Winner Declaration */}
-      {ai_insights && ai_insights.winner && (
-        <div className="winner-banner">
-          <h3>🏆 Overall Winner: {ai_insights.winner}</h3>
-          <p>{ai_insights.winner_reasoning}</p>
-        </div>
-      )}
-      
       {/* Side-by-Side Comparison Cards */}
       <div className="comparison-grid">
         <ProductComparisonCard 
           product={product_1}
-          isWinner={ai_insights?.winner === product_1.name || ai_insights?.winner?.toLowerCase().includes(product_1.name.toLowerCase())}
         />
         
         <div className="vs-divider">VS</div>
         
         <ProductComparisonCard 
           product={product_2}
-          isWinner={ai_insights?.winner === product_2.name || ai_insights?.winner?.toLowerCase().includes(product_2.name.toLowerCase())}
         />
       </div>
       
@@ -72,8 +62,14 @@ const CompetitiveAnalysisView = ({ data }) => {
       {/* Head-to-Head Attribute Comparison */}
       {ai_insights?.head_to_head_comparison && (
         <div className="attribute-comparison">
-          <h3>📊 HEAD-TO-HEAD COMPARISON</h3>
-          <p className="comparison-hint">Click on any attribute to see detailed pros & cons</p>
+          <h3>📊 CRITERION-BY-CRITERION COMPARISON</h3>
+          <p className="comparison-hint">Who leads where? Click on any attribute to see detailed breakdown</p>
+          <div className="count-explainer-note">
+            <small>
+              💡 <strong>Note:</strong> Reviews can mention multiple attributes, so totals across categories may exceed the review count. 
+              "Overall Satisfaction" captures general sentiment without specific attribute mentions.
+            </small>
+          </div>
           <div className="attributes-grid">
             {Object.entries(ai_insights.head_to_head_comparison).map(([attribute, data]) => {
               const attributeIcons = {
@@ -83,7 +79,8 @@ const CompetitiveAnalysisView = ({ data }) => {
                 'style': '👔',
                 'price': '💰',
                 'value_for_money': '💵',
-                'break_in_period': '👟'
+                'break_in_period': '👟',
+                'overall_satisfaction': '🎯'
               };
               const icon = attributeIcons[attribute] || '📍';
               const isExpanded = expandedAttribute === attribute;
@@ -326,26 +323,18 @@ const CompetitiveAnalysisView = ({ data }) => {
   );
 };
 
-const ProductComparisonCard = ({ product, isWinner }) => {
+const ProductComparisonCard = ({ product }) => {
   const analysis = product.analysis;
   
   return (
-    <div className={`product-comparison-card ${isWinner ? 'winner' : ''}`}>
-      {isWinner && <div className="winner-badge">🏆 WINNER</div>}
-      
+    <div className="product-comparison-card">
       <h3>{product.name.toUpperCase()}</h3>
       
       <div className="product-stats">
         <div className="stat-item">
-          <Star size={24} />
-          <span className="stat-value">{analysis.average_rating || 'N/A'}</span>
-          <span className="stat-label">Avg Rating</span>
-        </div>
-        
-        <div className="stat-item">
           <Users size={24} />
           <span className="stat-value">{analysis.total_reviews}</span>
-          <span className="stat-label">Reviews</span>
+          <span className="stat-label">Total Reviews</span>
         </div>
       </div>
       
@@ -411,7 +400,8 @@ const getAttributeDetails = (attribute, productName, attributeData, aiInsights, 
     'style': ['style', 'look', 'design', 'aesthetic', 'fashion', 'appearance'],
     'price': ['price', 'cost', 'expensive', 'cheap', 'affordable', 'value'],
     'value_for_money': ['value', 'worth', 'price', 'investment', 'money'],
-    'break_in_period': ['break', 'stiff', 'painful', 'soften', 'wear in', 'comfort']
+    'break_in_period': ['break', 'stiff', 'painful', 'soften', 'wear in', 'comfort'],
+    'overall_satisfaction': ['overall', 'recommend', 'love', 'happy', 'satisfied', 'disappointed', 'best', 'worst']
   };
   
   const keywords = attributeKeywords[attribute] || [];

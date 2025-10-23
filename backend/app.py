@@ -7,6 +7,7 @@ from textblob import TextBlob
 from datetime import datetime
 from openai import OpenAI
 import json
+import time
 from amazon_scraper import scrape_amazon_reviews
 from reddit_scraper import scrape_reddit_reviews
 from youtube_scraper import scrape_youtube_reviews
@@ -863,6 +864,10 @@ def competitive_analysis():
                 except Exception as e:
                     print(f"⚠️ YouTube error for {product_name}: {e}")
                 
+                # Add delay before next source
+                print("⏳ Waiting 2 seconds before next source...")
+                time.sleep(2)
+                
                 # Amazon
                 try:
                     print(f"🛒 Fetching Amazon for: {product_name}")
@@ -871,6 +876,10 @@ def competitive_analysis():
                     print(f"✅ Amazon: {len(product_reviews['amazon'])} reviews")
                 except Exception as e:
                     print(f"⚠️ Amazon error for {product_name}: {e}")
+                
+                # Add delay before next source
+                print("⏳ Waiting 2 seconds before next source...")
+                time.sleep(2)
                 
                 # Reddit
                 try:
@@ -881,14 +890,27 @@ def competitive_analysis():
                 except Exception as e:
                     print(f"⚠️ Reddit error for {product_name}: {e}")
                 
-                # Trustpilot (for all supported brands)
+                # Add longer delay before Trustpilot (Selenium is more sensitive)
+                print("⏳ Waiting 3 seconds before Trustpilot...")
+                time.sleep(3)
+                
+                # Trustpilot (for all supported brands) with retry and fallback
+                print(f"⭐ Fetching Trustpilot for: {product_name}")
+                trustpilot_reviews = []
                 try:
-                    print(f"⭐ Fetching Trustpilot for: {product_name}")
-                    trustpilot_reviews = scrape_trustpilot_reviews(product_name, max_reviews=30)
-                    product_reviews['trustpilot'] = trustpilot_reviews or []
-                    print(f"✅ Trustpilot: {len(product_reviews['trustpilot'])} reviews")
+                    trustpilot_reviews = scrape_trustpilot_reviews(product_name, max_reviews=30, max_retries=2)
+                    
+                    if len(trustpilot_reviews) == 0:
+                        print(f"⚠️ Trustpilot returned 0 reviews for {product_name}")
+                        print(f"   Analysis will continue with other sources")
+                    else:
+                        product_reviews['trustpilot'] = trustpilot_reviews
+                        print(f"✅ Trustpilot: {len(trustpilot_reviews)} reviews")
+                        
                 except Exception as e:
-                    print(f"⚠️ Trustpilot error for {product_name}: {e}")
+                    print(f"⚠️ Trustpilot scraping failed completely for {product_name}: {str(e)[:100]}")
+                    print(f"   Continuing with other review sources...")
+                    product_reviews['trustpilot'] = []
                 
             except Exception as e:
                 print(f"❌ Error fetching reviews for {product_name}: {e}")
@@ -1005,13 +1027,16 @@ COMPETITOR: {competitor_product}
 
 CONTEXT: This analysis is for Dr. Martens leadership to understand competitive positioning and identify strategic opportunities.
 
-IMPORTANT: Base your analysis ONLY on sentiment percentages and review content. DO NOT use average ratings as a criterion.
+IMPORTANT: Base your analysis ONLY on sentiment percentages and review content. DO NOT use average ratings as a criterion.Be completely honest by comparing both products fairly.
 
+WINNER DETERMINATION:
+- DO NOT declare an overall winner
+- Only identify winners for EACH SPECIFIC CRITERION
+- Be objective and honest about who leads in each category
+- Frame insights to help Dr. Martens understand where they excel and where competitors are stronger
+- Dont be partial to the competitor. If dr martens is better in a category, say so.
 Provide a comprehensive competitive analysis in JSON format from DR. MARTENS' PERSPECTIVE:
 {{
-    "winner": "{dr_martens_product} or {competitor_product} or Tie",
-    "winner_reasoning": "Clear assessment of which product customers prefer overall based on reviews",
-    
     "head_to_head_comparison": {{
         "quality": {{
             "winner": "product name", 
@@ -1054,6 +1079,12 @@ Provide a comprehensive competitive analysis in JSON format from DR. MARTENS' PE
             "reasoning": "Specific evidence - ease of break-in",
             "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
             "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "overall_satisfaction": {{
+            "winner": "product name",
+            "reasoning": "General satisfaction from reviews without specific attribute mentions - overall happiness, recommendations, or disappointment",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
         }}
     }},
     
@@ -1079,16 +1110,42 @@ Provide a comprehensive competitive analysis in JSON format from DR. MARTENS' PE
     
     "customer_preference_insights": "What factors drive customers to choose Dr. Martens vs competitor",
     
-    "executive_summary": "3-sentence strategic summary for Dr. Martens leadership highlighting: (1) competitive standing, (2) key threat/opportunity, (3) priority action"
+    "executive_summary": "3-sentence strategic summary for Dr. Martens leadership: (1) Summarize who leads in which criteria, (2) Identify key strategic opportunities based on where DM is strong/weak, (3) Provide actionable recommendation"
 }}
 
 IMPORTANT: Frame ALL insights from Dr. Martens' strategic perspective. Focus on actionable intelligence for the Dr. Martens brand. Be honest about weaknesses but solution-oriented. DO NOT mention or compare average ratings in any part of your analysis - focus only on sentiment percentages and review content.
 
+CRITICAL: NO OVERALL WINNER - Only identify winners for each specific criterion. Be objective about who leads where. This helps Dr. Martens understand their competitive position across different attributes.
+
+ATTRIBUTE ANALYSIS INSTRUCTIONS:
+
 For each attribute in head_to_head_comparison, you MUST calculate sentiment metrics by:
-1. Identifying reviews that mention the attribute (use keywords: quality → 'quality', 'craftsmanship', 'made', 'construction'; comfort → 'comfort', 'comfortable', 'cushion', 'soft', 'painful', 'hurt'; durability → 'durable', 'lasted', 'years', 'wearing', 'falling apart'; style → 'look', 'style', 'aesthetic', 'design'; price → 'price', 'expensive', 'cheap', 'worth', 'cost'; value_for_money → 'value', 'worth', 'money', 'investment'; break_in_period → 'break in', 'break-in', 'stiff', 'soften')
-2. Counting positive vs negative mentions for EACH product
-3. Calculating percentages: positive_pct = (positive_count / total_mentions) * 100
-4. Filling in dr_martens_sentiment and competitor_sentiment with ACTUAL counts and percentages
+
+1. **Specific Attributes (quality, comfort, durability, style, price, value_for_money, break_in_period)**:
+   - Identify reviews mentioning the attribute using keywords:
+     * quality → 'quality', 'craftsmanship', 'made', 'construction', 'build', 'materials', 'well-made', 'cheap quality'
+     * comfort → 'comfort', 'comfortable', 'cushion', 'soft', 'painful', 'hurt', 'cozy', 'support', 'foot pain'
+     * durability → 'durable', 'lasted', 'years', 'wearing', 'falling apart', 'broke', 'held up', 'worn out', 'lifetime'
+     * style → 'look', 'style', 'aesthetic', 'design', 'fashion', 'trendy', 'cool', 'ugly', 'appearance'
+     * price → 'price', 'expensive', 'cheap', 'affordable', 'cost', 'overpriced'
+     * value_for_money → 'value', 'worth', 'money', 'investment', 'worth it', 'not worth'
+     * break_in_period → 'break in', 'break-in', 'stiff', 'soften', 'first week', 'initially', 'getting used to'
+
+2. **Overall Satisfaction (NEW)**:
+   - Identify reviews that express GENERAL sentiment WITHOUT mentioning specific attributes above
+   - Examples: "Love these!", "Highly recommend", "Best purchase ever", "Waste of money", "Disappointed", "Never buy again"
+   - These are reviews that don't fit into specific categories but show overall happiness/disappointment
+   - Count positive vs negative for general satisfaction
+
+3. **Counting & Calculating**:
+   - Count positive vs negative mentions for EACH product
+   - Calculate percentages: positive_pct = (positive_count / total_mentions) * 100
+   - Fill in dr_martens_sentiment and competitor_sentiment with ACTUAL counts and percentages
+
+4. **Important Notes**:
+   - A single review can mention MULTIPLE attributes (count it in each relevant category)
+   - Sum of attribute counts may EXCEED total reviews (this is expected and correct)
+   - Overall satisfaction captures reviews with NO specific attribute mentions
 
 Example: If 30 reviews mention comfort for Dr Martens (23 positive, 7 negative):
 "dr_martens_sentiment": {{"positive_count": 23, "negative_count": 7, "positive_pct": 76.7, "negative_pct": 23.3}}

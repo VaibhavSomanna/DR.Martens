@@ -6,6 +6,7 @@ import praw
 import os
 from dotenv import load_dotenv
 from datetime import datetime
+import time
 
 load_dotenv()
 
@@ -67,6 +68,9 @@ def scrape_reddit_reviews(query, max_reviews=50):
         subreddit_str = '+'.join(subreddits)
         subreddit = reddit.subreddit(subreddit_str)
         
+        # Add delay before API call to respect rate limits
+        time.sleep(1)
+        
         # Search for relevant posts
         search_results = subreddit.search(query, limit=20, sort='relevance', time_filter='all')
         
@@ -74,6 +78,9 @@ def scrape_reddit_reviews(query, max_reviews=50):
         for post in search_results:
             if len(reviews) >= max_reviews:
                 break
+            
+            # Add small delay between processing posts
+            time.sleep(0.5)
             
             # Extract post itself as a review
             if post.selftext and len(post.selftext) > 50 and post.selftext != '[removed]':
@@ -92,6 +99,10 @@ def scrape_reddit_reviews(query, max_reviews=50):
             # Extract top comments from the post
             try:
                 post.comments.replace_more(limit=0)  # Remove "load more comments"
+                
+                # Add delay before fetching comments
+                time.sleep(0.5)
+                
                 for comment in post.comments.list()[:5]:  # Top 5 comments per post
                     if len(reviews) >= max_reviews:
                         break
@@ -109,8 +120,13 @@ def scrape_reddit_reviews(query, max_reviews=50):
                             'subreddit': str(post.subreddit),
                             'type': 'comment'
                         })
+                    
+                    # Small delay between comments
+                    time.sleep(0.2)
+                    
             except Exception as e:
                 print(f"⚠️ Error processing comments: {e}")
+                time.sleep(1)  # Wait before continuing
                 continue
         
         print(f"✅ Successfully scraped {len(reviews)} Reddit reviews from {posts_processed} posts")
