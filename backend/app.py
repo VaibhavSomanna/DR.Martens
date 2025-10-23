@@ -1213,7 +1213,7 @@ if __name__ == '__main__':
     import sys
     
     # Allow socket reuse to prevent "address already in use" errors
-    port = 5000
+    port = 4000
     
     try:
         print(f"🚀 Starting Flask server on port {port}...")
