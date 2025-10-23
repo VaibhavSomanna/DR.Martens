@@ -618,7 +618,7 @@ def combined_analysis():
         # Fetch Reddit reviews
         try:
             print(f"📱 Fetching Reddit reviews for: {query}")
-            reddit_data = scrape_reddit_reviews(query, max_posts=max_reviews)
+            reddit_data = scrape_reddit_reviews(query, max_reviews=max_reviews)
             
             for post in reddit_data:
                 sentiment_data = analyze_sentiment(post.get('text', ''))
@@ -801,5 +801,390 @@ def amazon_search():
                 'details': error_msg[:300]
             }), 500
 
+@app.route('/api/competitive-analysis', methods=['POST'])
+def competitive_analysis():
+    """
+    Compare two products side-by-side
+    Triggered when query contains 'vs' or 'versus'
+    Example: "Dr Martens 1460 vs Timberland 6 inch"
+    """
+    try:
+        data = request.json
+        query = data.get('query', '')
+        
+        if not query:
+            return jsonify({'error': 'Query parameter is required'}), 400
+        
+        # Check if query contains comparison keywords
+        comparison_keywords = [' vs ', ' versus ', ' vs. ', ' compared to ', ' or ']
+        is_comparison = any(keyword in query.lower() for keyword in comparison_keywords)
+        
+        if not is_comparison:
+            return jsonify({
+                'error': 'Query does not contain comparison keywords (vs, versus, etc.)',
+                'success': False
+            }), 400
+        
+        print(f"🆚 Competitive Analysis Request: {query}")
+        
+        # Split query into two products
+        products = []
+        for keyword in comparison_keywords:
+            if keyword in query.lower():
+                products = query.lower().split(keyword, 1)
+                break
+        
+        product_1 = products[0].strip()
+        product_2 = products[1].strip()
+        
+        print(f"📊 Product 1: {product_1}")
+        print(f"📊 Product 2: {product_2}")
+        
+        # Parallel data collection for both products
+        from concurrent.futures import ThreadPoolExecutor
+        
+        def fetch_all_reviews(product_name):
+            """Fetch reviews from all sources for a product"""
+            product_reviews = {
+                'product_name': product_name,
+                'youtube': [],
+                'amazon': [],
+                'reddit': [],
+                'trustpilot': []
+            }
+            
+            try:
+                # YouTube
+                try:
+                    print(f"🎥 Fetching YouTube for: {product_name}")
+                    youtube_reviews = scrape_youtube_reviews(f"{product_name} review", max_reviews=30)
+                    product_reviews['youtube'] = youtube_reviews or []
+                    print(f"✅ YouTube: {len(product_reviews['youtube'])} reviews")
+                except Exception as e:
+                    print(f"⚠️ YouTube error for {product_name}: {e}")
+                
+                # Amazon
+                try:
+                    print(f"🛒 Fetching Amazon for: {product_name}")
+                    product_info, amazon_reviews = scrape_amazon_reviews(product_name, max_reviews=20)
+                    product_reviews['amazon'] = amazon_reviews or []
+                    print(f"✅ Amazon: {len(product_reviews['amazon'])} reviews")
+                except Exception as e:
+                    print(f"⚠️ Amazon error for {product_name}: {e}")
+                
+                # Reddit
+                try:
+                    print(f"💬 Fetching Reddit for: {product_name}")
+                    reddit_reviews = scrape_reddit_reviews(product_name, max_reviews=30)
+                    product_reviews['reddit'] = reddit_reviews or []
+                    print(f"✅ Reddit: {len(product_reviews['reddit'])} discussions")
+                except Exception as e:
+                    print(f"⚠️ Reddit error for {product_name}: {e}")
+                
+                # Trustpilot (for all supported brands)
+                try:
+                    print(f"⭐ Fetching Trustpilot for: {product_name}")
+                    trustpilot_reviews = scrape_trustpilot_reviews(product_name, max_reviews=30)
+                    product_reviews['trustpilot'] = trustpilot_reviews or []
+                    print(f"✅ Trustpilot: {len(product_reviews['trustpilot'])} reviews")
+                except Exception as e:
+                    print(f"⚠️ Trustpilot error for {product_name}: {e}")
+                
+            except Exception as e:
+                print(f"❌ Error fetching reviews for {product_name}: {e}")
+            
+            return product_reviews
+        
+        # Fetch reviews for both products in parallel
+        print("🔄 Starting parallel data collection...")
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            future_product1 = executor.submit(fetch_all_reviews, product_1)
+            future_product2 = executor.submit(fetch_all_reviews, product_2)
+            
+            product1_data = future_product1.result()
+            product2_data = future_product2.result()
+        
+        print("✅ Data collection complete")
+        
+        # Analyze sentiment for both products
+        def analyze_product_reviews(product_data):
+            """Analyze all reviews for a product"""
+            all_reviews = []
+            all_reviews.extend(product_data['youtube'])
+            all_reviews.extend(product_data['amazon'])
+            all_reviews.extend(product_data['reddit'])
+            all_reviews.extend(product_data['trustpilot'])
+            
+            # Analyze sentiment for each review
+            for review in all_reviews:
+                if 'text' in review and review['text']:
+                    sentiment_data = analyze_sentiment(review['text'], review.get('rating'))
+                    review['sentiment'] = sentiment_data['sentiment']
+                    review['polarity'] = sentiment_data.get('polarity', 0)
+                    review['confidence'] = sentiment_data.get('confidence', 0.5)
+            
+            # Calculate aggregate metrics
+            total_reviews = len(all_reviews)
+            if total_reviews > 0:
+                positive_count = sum(1 for r in all_reviews if r.get('sentiment') == 'positive')
+                negative_count = sum(1 for r in all_reviews if r.get('sentiment') == 'negative')
+                neutral_count = sum(1 for r in all_reviews if r.get('sentiment') == 'neutral')
+                
+                # Only include ratings that are not None and greater than 0
+                ratings = [r.get('rating') for r in all_reviews if r.get('rating') is not None and r.get('rating') > 0]
+                avg_rating = sum(ratings) / len(ratings) if ratings else 0
+                
+                return {
+                    'reviews': all_reviews,
+                    'total_reviews': total_reviews,
+                    'positive_count': positive_count,
+                    'negative_count': negative_count,
+                    'neutral_count': neutral_count,
+                    'positive_percentage': round((positive_count / total_reviews) * 100, 1),
+                    'negative_percentage': round((negative_count / total_reviews) * 100, 1),
+                    'neutral_percentage': round((neutral_count / total_reviews) * 100, 1),
+                    'average_rating': round(avg_rating, 2),
+                    'sources': {
+                        'youtube': len(product_data['youtube']),
+                        'amazon': len(product_data['amazon']),
+                        'reddit': len(product_data['reddit']),
+                        'trustpilot': len(product_data['trustpilot'])
+                    }
+                }
+            
+            return {
+                'reviews': [],
+                'total_reviews': 0,
+                'positive_count': 0,
+                'negative_count': 0,
+                'neutral_count': 0,
+                'positive_percentage': 0,
+                'negative_percentage': 0,
+                'neutral_percentage': 0,
+                'average_rating': 0,
+                'sources': {'youtube': 0, 'amazon': 0, 'reddit': 0, 'trustpilot': 0}
+            }
+        
+        print("🔄 Analyzing sentiments...")
+        product1_analysis = analyze_product_reviews(product1_data)
+        product2_analysis = analyze_product_reviews(product2_data)
+        
+        print(f"✅ Product 1 ({product_1}): {product1_analysis['total_reviews']} reviews")
+        print(f"✅ Product 2 ({product_2}): {product2_analysis['total_reviews']} reviews")
+        
+        # Generate AI-powered competitive insights
+        ai_insights = None
+        if client and (product1_analysis['total_reviews'] > 0 or product2_analysis['total_reviews'] > 0):
+            try:
+                print("🤖 Generating AI competitive insights...")
+                
+                # Sample reviews for prompt (max 10 per product)
+                product1_sample = [r['text'][:200] for r in product1_analysis['reviews'][:10] if r.get('text')]
+                product2_sample = [r['text'][:200] for r in product2_analysis['reviews'][:10] if r.get('text')]
+                
+                # Detect which product is Dr. Martens
+                dr_martens_is_product_1 = 'dr' in product_1.lower() and 'mart' in product_1.lower()
+                dr_martens_product = product_1 if dr_martens_is_product_1 else product_2
+                competitor_product = product_2 if dr_martens_is_product_1 else product_1
+                dr_martens_analysis = product1_analysis if dr_martens_is_product_1 else product2_analysis
+                competitor_analysis = product2_analysis if dr_martens_is_product_1 else product1_analysis
+                dr_martens_sample = product1_sample if dr_martens_is_product_1 else product2_sample
+                competitor_sample = product2_sample if dr_martens_is_product_1 else product1_sample
+                
+                comparison_prompt = f"""You are analyzing competitive intelligence for DR. MARTENS brand management.
+
+DR. MARTENS PRODUCT: {dr_martens_product}
+- Total Reviews: {dr_martens_analysis['total_reviews']}
+- Sentiment: {dr_martens_analysis['positive_percentage']}% positive, {dr_martens_analysis['negative_percentage']}% negative
+- Sample Customer Reviews: {dr_martens_sample}
+
+COMPETITOR: {competitor_product}
+- Total Reviews: {competitor_analysis['total_reviews']}
+- Sentiment: {competitor_analysis['positive_percentage']}% positive, {competitor_analysis['negative_percentage']}% negative
+- Sample Customer Reviews: {competitor_sample}
+
+CONTEXT: This analysis is for Dr. Martens leadership to understand competitive positioning and identify strategic opportunities.
+
+IMPORTANT: Base your analysis ONLY on sentiment percentages and review content. DO NOT use average ratings as a criterion.
+
+Provide a comprehensive competitive analysis in JSON format from DR. MARTENS' PERSPECTIVE:
+{{
+    "winner": "{dr_martens_product} or {competitor_product} or Tie",
+    "winner_reasoning": "Clear assessment of which product customers prefer overall based on reviews",
+    
+    "head_to_head_comparison": {{
+        "quality": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - how does Dr. Martens compare?",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "comfort": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - comfort comparison",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "durability": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - longevity comparison",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "style": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - aesthetic appeal comparison",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "price": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - actual price comparison and affordability",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "value_for_money": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - price-value perception",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }},
+        "break_in_period": {{
+            "winner": "product name", 
+            "reasoning": "Specific evidence - ease of break-in",
+            "dr_martens_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}},
+            "competitor_sentiment": {{"positive_count": 0, "negative_count": 0, "positive_pct": 0, "negative_pct": 0}}
+        }}
+    }},
+    
+    "dr_martens_strengths": ["Key strength 1", "Key strength 2", "Key strength 3"],
+    "dr_martens_weaknesses": ["Critical weakness 1", "Critical weakness 2", "Critical weakness 3"],
+    
+    "competitor_strengths": ["What competitor does well 1", "What competitor does well 2", "What competitor does well 3"],
+    "competitor_weaknesses": ["Competitor weakness 1", "Competitor weakness 2", "Competitor weakness 3"],
+    
+    "competitive_advantages": "What Dr. Martens does BETTER than competitor (be specific)",
+    "competitive_threats": "Where competitor is winning customers away from Dr. Martens",
+    
+    "target_audience": {{
+        "dr_martens_best_for": "Customer segments where Dr. Martens wins",
+        "competitor_best_for": "Customer segments where competitor wins"
+    }},
+    
+    "price_value_analysis": "How Dr. Martens' value proposition compares to competitor",
+    
+    "strategic_recommendations_for_dr_martens": "TOP 3 actionable strategies Dr. Martens should implement to strengthen market position against this competitor",
+    
+    "market_positioning": "How Dr. Martens is positioned vs competitor in customer minds",
+    
+    "customer_preference_insights": "What factors drive customers to choose Dr. Martens vs competitor",
+    
+    "executive_summary": "3-sentence strategic summary for Dr. Martens leadership highlighting: (1) competitive standing, (2) key threat/opportunity, (3) priority action"
+}}
+
+IMPORTANT: Frame ALL insights from Dr. Martens' strategic perspective. Focus on actionable intelligence for the Dr. Martens brand. Be honest about weaknesses but solution-oriented. DO NOT mention or compare average ratings in any part of your analysis - focus only on sentiment percentages and review content.
+
+For each attribute in head_to_head_comparison, you MUST calculate sentiment metrics by:
+1. Identifying reviews that mention the attribute (use keywords: quality → 'quality', 'craftsmanship', 'made', 'construction'; comfort → 'comfort', 'comfortable', 'cushion', 'soft', 'painful', 'hurt'; durability → 'durable', 'lasted', 'years', 'wearing', 'falling apart'; style → 'look', 'style', 'aesthetic', 'design'; price → 'price', 'expensive', 'cheap', 'worth', 'cost'; value_for_money → 'value', 'worth', 'money', 'investment'; break_in_period → 'break in', 'break-in', 'stiff', 'soften')
+2. Counting positive vs negative mentions for EACH product
+3. Calculating percentages: positive_pct = (positive_count / total_mentions) * 100
+4. Filling in dr_martens_sentiment and competitor_sentiment with ACTUAL counts and percentages
+
+Example: If 30 reviews mention comfort for Dr Martens (23 positive, 7 negative):
+"dr_martens_sentiment": {{"positive_count": 23, "negative_count": 7, "positive_pct": 76.7, "negative_pct": 23.3}}
+
+These sentiment metrics MUST be based on the actual review data provided, not estimates."""
+
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are a competitive intelligence analyst specializing in product comparison. Provide data-driven, actionable insights based solely on customer review sentiment and content. Never use or mention average ratings - focus on sentiment percentages instead."
+                        },
+                        {
+                            "role": "user",
+                            "content": comparison_prompt
+                        }
+                    ],
+                    temperature=0.3,
+                    max_tokens=2500,
+                    response_format={"type": "json_object"}
+                )
+                
+                ai_insights = json.loads(response.choices[0].message.content)
+                print("✅ AI insights generated successfully")
+                
+            except Exception as e:
+                print(f"⚠️ Error generating AI insights: {e}")
+                import traceback
+                traceback.print_exc()
+                ai_insights = None
+        else:
+            print("⚠️ Skipping AI insights (no OpenAI client or no reviews)")
+        
+        # Return comprehensive comparison
+        return jsonify({
+            'success': True,
+            'is_competitive_analysis': True,
+            'query': query,
+            'product_1': {
+                'name': product_1,
+                'analysis': product1_analysis
+            },
+            'product_2': {
+                'name': product_2,
+                'analysis': product2_analysis
+            },
+            'ai_insights': ai_insights,
+            'comparison_summary': {
+                'total_reviews_compared': product1_analysis['total_reviews'] + product2_analysis['total_reviews'],
+                'sentiment_difference': round(product1_analysis['positive_percentage'] - product2_analysis['positive_percentage'], 1)
+            }
+        })
+        
+    except Exception as e:
+        print(f"❌ Error in competitive analysis: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'error': str(e),
+            'success': False
+        }), 500
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5000)
+    import sys
+    
+    # Allow socket reuse to prevent "address already in use" errors
+    port = 5000
+    
+    try:
+        print(f"🚀 Starting Flask server on port {port}...")
+        print(f"🌐 Backend API: http://localhost:{port}")
+        print(f"📊 Endpoints available:")
+        print(f"   - POST /api/unified-search")
+        print(f"   - POST /api/competitive-analysis")
+        print(f"\n✅ Server is ready!\n")
+        
+        # Use threaded=True to handle multiple requests
+        # Use use_reloader=False in production to avoid socket issues
+        app.run(
+            debug=True, 
+            port=port, 
+            host='127.0.0.1',
+            threaded=True,
+            use_reloader=False  # Prevents double-loading and socket issues
+        )
+    except OSError as e:
+        if "WinError 10038" in str(e) or "address already in use" in str(e).lower():
+            print(f"\n❌ Error: Port {port} is already in use!")
+            print(f"💡 Solutions:")
+            print(f"   1. Kill the existing process: taskkill /F /PID <PID>")
+            print(f"   2. Find the PID: netstat -ano | findstr :{port}")
+            print(f"   3. Or use a different port by changing the port variable")
+            sys.exit(1)
+        else:
+            raise
+    except KeyboardInterrupt:
+        print("\n\n👋 Server shutting down gracefully...")
+        sys.exit(0)

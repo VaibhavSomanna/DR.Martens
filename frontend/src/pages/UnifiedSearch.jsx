@@ -6,6 +6,7 @@ import SentimentChart from '../components/SentimentChart'
 import ReviewCard from '../components/ReviewCard'
 import AIInsights from '../components/AIInsights'
 import ChatAssistant from '../components/ChatAssistant'
+import CompetitiveAnalysisView from '../components/CompetitiveAnalysisView'
 import './UnifiedSearch.css'
 
 function UnifiedSearch() {
@@ -22,6 +23,10 @@ function UnifiedSearch() {
   const [statistics, setStatistics] = useState(null)
   const [activeFilter, setActiveFilter] = useState('all')
   
+  // Competitive analysis
+  const [isCompetitiveAnalysis, setIsCompetitiveAnalysis] = useState(false)
+  const [competitiveData, setCompetitiveData] = useState(null)
+  
   // AI features
   const [insights, setInsights] = useState(null)
   const [insightsLoading, setInsightsLoading] = useState(false)
@@ -36,6 +41,8 @@ function UnifiedSearch() {
 
     setLoading(true)
     setError('')
+    
+    // Reset all states
     setAllReviews([])
     setYoutubeData(null)
     setAmazonData(null)
@@ -45,8 +52,41 @@ function UnifiedSearch() {
     setInsights(null)
     setInsightsLoading(false)
     setInsightsError('')
+    setIsCompetitiveAnalysis(false)
+    setCompetitiveData(null)
 
     try {
+      // Check if query contains comparison keywords
+      const comparisonKeywords = [' vs ', ' versus ', ' vs. ', ' compared to ', ' or ']
+      const isComparison = comparisonKeywords.some(keyword => 
+        searchQuery.toLowerCase().includes(keyword)
+      )
+
+      if (isComparison) {
+        // ========================================
+        // COMPETITIVE ANALYSIS MODE
+        // ========================================
+        console.log('🆚 Running competitive analysis...')
+        setIsCompetitiveAnalysis(true)
+
+        const response = await axios.post('http://localhost:5000/api/competitive-analysis', {
+          query: searchQuery
+        })
+
+        if (response.data && response.data.success) {
+          setCompetitiveData(response.data)
+          console.log('✅ Competitive analysis complete')
+        } else {
+          throw new Error(response.data.error || 'Competitive analysis failed')
+        }
+
+      } else {
+        // ========================================
+        // NORMAL SINGLE-PRODUCT SEARCH MODE
+        // ========================================
+        console.log('🔍 Running normal product search...')
+        setIsCompetitiveAnalysis(false)
+
       // Search all four sources in parallel
       const [youtubeResponse, amazonResponse, redditResponse, trustpilotResponse] = await Promise.all([
         // YouTube search
@@ -216,14 +256,16 @@ function UnifiedSearch() {
         await generateInsights(combinedReviews)
         console.log('✅ Search complete! Ready to render.')
       } else {
-        console.log('⚠️ No reviews found from either source')
-        setError('No reviews found from either source. Try a different search query.')
+        console.log('⚠️ No reviews found from any source')
+        setError('No reviews found from any source. Try a different search query.')
       }
+      
+      } // End of normal search mode
 
     } catch (err) {
       console.error('❌ Search error:', err)
       console.error('Error stack:', err.stack)
-      setError('An error occurred while searching. Please try again.')
+      setError(err.message || 'An error occurred while searching. Please try again.')
     } finally {
       console.log('🏁 Setting loading=false')
       setLoading(false)
@@ -284,11 +326,14 @@ function UnifiedSearch() {
     <div className="unified-search">
       <div className="hero-section">
         <h1>🔍 Brand Sentiment Agent</h1>
+        <p className="feature-hint">
+          💡 Try: "Dr Martens 1460" or "Dr Martens 1460 vs Timberland 6 inch"
+        </p>
         
         <div className="search-box">
           <input
             type="text"
-            placeholder="Search for products or stores (e.g., 'Dr Martens 1460 boots' or 'Dr Martens Camden London')"
+            placeholder="Search for product or compare (e.g., 'Product A vs Product B')"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
@@ -307,13 +352,23 @@ function UnifiedSearch() {
         <div className="loading-container">
           <div className="loading-spinner">
             <Loader className="spinner" size={48} />
-            <p>Agent is searching...</p>
+            <p>
+              {isCompetitiveAnalysis 
+                ? 'Running competitive analysis across all sources...' 
+                : 'Agent is searching...'}
+            </p>
             <p className="loading-subtext">This may take 30-60 seconds</p>
           </div>
         </div>
       )}
 
-      {!loading && allReviews.length > 0 && (
+      {/* COMPETITIVE ANALYSIS VIEW */}
+      {isCompetitiveAnalysis && competitiveData && !loading && (
+        <CompetitiveAnalysisView data={competitiveData} />
+      )}
+
+      {/* NORMAL SINGLE-PRODUCT VIEW */}
+      {!isCompetitiveAnalysis && !loading && allReviews.length > 0 && (
         <>
           {console.log('🎨 Rendering results section with', allReviews.length, 'reviews')}
           {/* Source Cards */}
